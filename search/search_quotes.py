@@ -1,65 +1,34 @@
 import redis
-import json
 from models.models import Author, Quote
 from services.connect import *
+from redis_lru import RedisLRU
 
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=False)
+cache = RedisLRU(redis_client, max_size=1000)
 
-def get_cached_data(key):
-    """Отримуємо дані з Redis."""
-    cached_result = redis_client.get(key)
-    if cached_result:
-        return json.loads(cached_result)  # Декодуємо JSON в Python-об'єкт
-    return None
-
-def set_cached_data(key, data, expiration=900):
-    """Зберігає дані в Redis на 15 хв."""
-    redis_client.set(key, json.dumps(data), ex=expiration)
-
+@cache
 def search_by_name(name_prefix):
     """Шукає цитати за ім'ям(частиною імені) автора."""
-    key = f"name:{name_prefix.lower()}"
-    cached_result = get_cached_data(key)
-    
-    if cached_result:
-        return cached_result
-
     author = Author.objects(fullname__istartswith=name_prefix).first()
     if not author:
         return []
-
     quotes = Quote.objects(author=author)
     result = [quote.quote for quote in quotes]
-
-    set_cached_data(key, result)
     return result
 
+@cache
 def search_by_tag(tag_prefix):
     """Шукає цитати за тегом /частиною тега."""
-    key = f"tag:{tag_prefix.lower()}"
-    cached_result = get_cached_data(key)
-
-    if cached_result:
-        return cached_result
-
     quotes = Quote.objects(tags__istartswith=tag_prefix)
     result = [quote.quote for quote in quotes]
-
-    set_cached_data(key, result)
     return result
 
+@cache
 def search_by_tags(tags):
-    key = f"tags:{tags.lower()}"
-    cached_result = get_cached_data(key)
-
-    if cached_result:
-        return cached_result
-
+    """Шукає цитати за тегами."""
     tag_list = tags.split(",")
     quotes = Quote.objects(tags__in=tag_list)
     result = [quote.quote for quote in quotes]    
-
-    set_cached_data(key, result)
     return result
 
 
